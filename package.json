@@ -1,0 +1,30 @@
+{
+  "name": "ancestors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Let a repository's past reviewers come back for a day: a local, open-weight agent that reviews today's diffs in the voice of the project's ancestors, citing their actual words.",
+  "license": "MIT",
+  "scripts": {
+    "ingest": "tsx src/cli.ts ingest",
+    "review": "tsx src/cli.ts review",
+    "ask": "tsx src/cli.ts ask",
+    "worker": "tsx src/temporal/worker.ts",
+    "haunt": "tsx src/temporal/start.ts"
+  },
+  "dependencies": {
+    "@mastra/core": "^1.80.0",
+    "@mastra/memory": "^1.39.1",
+    "@mastra/libsql": "^1.27.1",
+    "@temporalio/activity": "^1.25.0",
+    "@temporalio/client": "^1.25.0",
+    "@temporalio/worker": "^1.25.0",
+    "@temporalio/workflow": "^1.25.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
+  }
+}
