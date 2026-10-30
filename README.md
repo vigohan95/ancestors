@@ -11,21 +11,33 @@ Built for the [DEV Hacktoberfest Open-Source AI Challenge: Week 4 — Ghost in t
 ## What it does
 
 ```
-$ npm run review -- encode/httpx --pr 3688
+$ npm run review -- encode/httpx --pr 3769
 
-[review] PR #3688 — …: 7 hunks, reviewing the 7 most substantive with gemma3:4b
-  · httpx/_models.py @@ -412,7 +412,9 @@ — 6 voices retrieved
+[review] PR #3769 — Ensure mounted transports are closed even if main transport raises (by bysiber):
+         4 hunks, reviewing the 4 most substantive with gemma3:4b; only voices from before 2025-10-30 may speak
+  · httpx/_client.py @@ -1267,10 +1267,12 @@ — 6 voices retrieved
   …
 
-# The ancestors visited PR #3688
+# The ancestors visited PR #3769 — Ensure mounted transports are closed even if main transport raises
+encode/httpx · 4 of 4 hunks reviewed · gemma3:4b running locally · 114s · 2 notes, 0 honoured, 2 silent
+
 ## They have something to say
-### 🕯️ `httpx/_models.py` -412,7 +412,9
-…cites [c278257559] yeraydiazdiaz, 2019-04-24, PR #18 …
-## They nodded
-…
+### 🕯️ httpx/_client.py -1267,10 +1267,12
+… [c472953172] proposed a more robust approach with `self._is_closed` to prevent repeated calls to
+`close()` when the client is already closed …
+- [c477206186] florimondmanca, 2020-08-26, PR #1218 on httpx/_client.py
+- [c472953172] lovelydinosaur, 2020-08-19, PR #1197 on httpx/_client.py: “We should put `self._is_closed = True` as the very first line…”
+
 ## They were silent on
-…
+- httpx/_client.py -1298,10 +1300,12
+- httpx/_client.py -2013,7 +2019,9
 ```
+
+Three honesty rules, enforced in code rather than in the prompt:
+
+1. **Only the dead may speak** — a comment is an ancestor only if it is older than 12 months (`before` cutoff), and the PR under review never testifies about itself.
+2. **No citation, no verdict** — a note that cites nothing from the retrieved evidence is downgraded to *"the ancestors are silent on this"*.
+3. **Two witnesses or it does not count** — a charter rule survives only with two independent supporting comments.
 
 Three commands:
 

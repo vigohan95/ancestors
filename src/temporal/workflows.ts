@@ -8,7 +8,7 @@ const { listOpenPrs } = proxyActivities<typeof activities>({
 
 const { reviewPr } = proxyActivities<typeof activities>({
   startToCloseTimeout: '45 minutes',
-  heartbeatTimeout: '4 minutes',          // CPU inference is slow; a dead worker is noticed within 4 min
+  heartbeatTimeout: '2 minutes',          // CPU inference is slow; a dead worker is noticed within 2 min
   retry: { initialInterval: '10s', backoffCoefficient: 2, maximumAttempts: 4 },
 });
 
