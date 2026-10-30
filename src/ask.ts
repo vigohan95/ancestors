@@ -5,7 +5,7 @@ import { migrate } from './db.js';
 /** Ask the ancestors a question about the codebase; they answer only from cited evidence. */
 export async function ask(repo: string, question: string, pathHint?: string, thread?: string): Promise<string> {
   await migrate();
-  const evidence = await retrieveComments(repo, question, pathHint, 8);
+  const evidence = await retrieveComments(repo, question, pathHint, { topK: 8 });
   const commits = pathHint ? await commitsForPath(repo, pathHint, 8) : [];
   const charter = await charterFor(repo);
   const prompt = [

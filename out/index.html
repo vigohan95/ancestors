@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ancestors — report viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.12/marked.min.js"></script>
+<style>
+  :root { --bg:#0f0e11; --fg:#ece6d9; --muted:#9b958a; --accent:#f2a93b; --card:#19171d; --line:#2a2730; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 34px 0 10px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 16px; margin: 22px 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h4 { color: var(--muted); font-weight: 600; margin-top: 30px; }
+  em { color: var(--muted); font-style: normal; font-size: 14px; }
+  code { background: var(--card); padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+  li { margin: 6px 0; }
+  a { color: #8cc4ff; }
+  blockquote { border-left: 3px solid var(--accent); margin: 0; padding: 4px 14px; color: var(--muted); }
+  .pick { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+  .pick a { margin-right: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="pick" id="pick"></div>
+  <article id="doc">Loading…</article>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  const file = params.get('f');
+  async function list() {
+    const files = await (await fetch('./reports.json', { cache: 'no-store' })).json();
+    document.getElementById('pick').innerHTML = files.map(f => `<a href="?f=${encodeURIComponent(f)}">${f.replace(/^encode__httpx__/, '').replace(/\.md$/, '')}</a>`).join('');
+    return files;
+  }
+  (async () => {
+    const files = await list();
+    const target = file || files[0];
+    if (!target) { document.getElementById('doc').textContent = 'No reports yet.'; return; }
+    const md = await (await fetch('./' + encodeURIComponent(target))).text();
+    document.getElementById('doc').innerHTML = marked.parse(md);
+    document.title = document.querySelector('h1')?.textContent || document.title;
+  })();
+</script>
+</body>
+</html>

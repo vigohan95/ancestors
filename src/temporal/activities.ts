@@ -18,7 +18,7 @@ export async function reviewPr(repo: string, pr: number): Promise<{ file: string
   const diff = diffForPr(repo, pr);
   const target = `PR #${pr} — ${prTitle(repo, pr)}`;
   const t0 = Date.now();
-  const result = await reviewDiff(repo, target, diff, s => { log.info(s); heartbeat(s); });
+  const result = await reviewDiff(repo, target, diff, s => { log.info(s); heartbeat(s); }, pr);
   const file = saveReport(result);
   return { file, notes: result.findings.filter(f => f.verdict === 'note').length, hunks: result.hunksReviewed, seconds: Math.round((Date.now() - t0) / 1000) };
 }

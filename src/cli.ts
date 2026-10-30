@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { ingest } from './ingest.js';
+import { ingest, buildCharter } from './ingest.js';
 import { reviewDiff, diffForPr, prTitle, saveReport } from './review.js';
 import { ask } from './ask.js';
 
@@ -19,11 +19,14 @@ async function main() {
   ancestors review <owner/repo> --pr <n>            review a pull request in the ancestors' voice
   ancestors review <owner/repo> --diff <file>       review a local unified diff (offline)
   ancestors ask    <owner/repo> "<question>" [--path <file>]
+  ancestors charter <owner/repo>                    rebuild only the charter
 `);
     return;
   }
   if (cmd === 'ingest') {
     await ingest(repo, arg('clone'));
+  } else if (cmd === 'charter') {
+    await buildCharter(repo);
   } else if (cmd === 'review') {
     const pr = arg('pr');
     const diffFile = arg('diff');
@@ -31,7 +34,7 @@ async function main() {
     if (pr) { diff = diffForPr(repo, Number(pr)); target = `PR #${pr} — ${prTitle(repo, Number(pr))}`; }
     else if (diffFile) { diff = fs.readFileSync(diffFile, 'utf8'); target = diffFile; }
     else throw new Error('need --pr <n> or --diff <file>');
-    const r = await reviewDiff(repo, target, diff, s => console.log(s));
+    const r = await reviewDiff(repo, target, diff, s => console.log(s), pr ? Number(pr) : undefined);
     const file = saveReport(r);
     console.log('\n' + r.markdown);
     console.log(`\n[saved] ${file}`);

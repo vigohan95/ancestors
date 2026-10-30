@@ -94,7 +94,7 @@ export async function ingest(repo: string, clonePath?: string) {
 
 /** A Mastra workflow that distils the ancestors' recurring expectations into a short charter. */
 const charterSchema = z.object({
-  rules: z.array(z.object({ rule: z.string(), evidence: z.array(z.string()).describe('comment ids like c123') })).min(3).max(12),
+  rules: z.array(z.object({ rule: z.string(), evidence: z.array(z.string()).describe('comment ids like c123') })).min(3).max(16),
 });
 
 const sampleStep = createStep({
@@ -102,13 +102,19 @@ const sampleStep = createStep({
   inputSchema: z.object({ repo: z.string() }),
   outputSchema: z.object({ repo: z.string(), sample: z.string(), n: z.number() }),
   execute: async ({ inputData }) => {
+    // Stratified by year so no single era or reviewer dominates: up to 8 substantive top-level comments per year.
     const rows = await db().execute({
-      sql: `SELECT id, author, created_at, path, body FROM comments WHERE repo = ? AND length(body) BETWEEN 60 AND 700 AND in_reply_to IS NULL ORDER BY length(body) DESC LIMIT 120`,
+      sql: `SELECT id, author, created_at, path, body FROM comments WHERE repo = ? AND length(body) BETWEEN 80 AND 600 AND in_reply_to IS NULL ORDER BY created_at`,
       args: [inputData.repo],
     });
-    // Every 2nd of the longest top-level comments so several reviewers and years are represented.
-    const picked = rows.rows.filter((_, i) => i % 2 === 0).slice(0, 48);
-    const sample = picked.map(r => `[c${r.id}] ${r.author} (${String(r.created_at).slice(0, 4)}, ${r.path}): ${String(r.body).replace(/\s+/g, ' ').slice(0, 320)}`).join('\n');
+    const byYear = new Map<string, typeof rows.rows>();
+    for (const r of rows.rows) { const y = String(r.created_at).slice(0, 4); if (!byYear.has(y)) byYear.set(y, []); byYear.get(y)!.push(r); }
+    const picked: typeof rows.rows = [];
+    for (const [, list] of [...byYear.entries()].sort()) {
+      const step = Math.max(1, Math.floor(list.length / 8));
+      for (let i = 0; i < list.length && picked.length < 44; i += step) picked.push(list[i]);
+    }
+    const sample = picked.map(r => `[c${r.id}] ${r.author} (${String(r.created_at).slice(0, 4)}, ${r.path}): ${String(r.body).replace(/\s+/g, ' ').slice(0, 260)}`).join('\n');
     return { repo: inputData.repo, sample, n: picked.length };
   },
 });
@@ -118,11 +124,23 @@ const distilStep = createStep({
   inputSchema: z.object({ repo: z.string(), sample: z.string(), n: z.number() }),
   outputSchema: z.object({ repo: z.string(), markdown: z.string(), json: z.string() }),
   execute: async ({ inputData }) => {
-    const prompt = `Below are ${inputData.n} review comments the maintainers of ${inputData.repo} left on pull requests over the years. Distil the 6-10 expectations they kept returning to (API design, naming, tests, docs, error handling, compatibility, style). For each rule give the comment ids that support it. Reply with JSON only: {"rules":[{"rule":"...","evidence":["c123","c456"]}]}\n\n${inputData.sample}`;
-    const res = await ancestorsAgent.generate(prompt);
+    const prompt = `Below are ${inputData.n} review comments the maintainers of ${inputData.repo} left on pull requests over the years. Distil the 5-8 expectations they kept RETURNING to across different years and reviewers (API design, naming, tests, docs, error handling, compatibility, style). A rule only counts if at least two different comments support it; give those comment ids. Write each rule as a general expectation that a reviewer could apply to brand-new code (good: "Prefer explicit parameters over **kwargs in public signatures"; bad: "Pass trust_env in the request call"). Reply with JSON only, at most 8 rules: {"rules":[{"rule":"...","evidence":["c123","c456"]}]}\n\n${inputData.sample}`;
+    const res = await ancestorsAgent.generate(prompt, { modelSettings: { maxOutputTokens: 2500, temperature: 0.2 } });
     const parsed = extractJson(res.text, charterSchema);
-    const rules = parsed?.rules ?? [];
-    const md = ['# What the ancestors kept asking for', '', ...rules.map((r, i) => `${i + 1}. ${r.rule} (${r.evidence.map(e => `[${e}]`).join(' ')})`)].join('\n');
+    if (!parsed) console.warn('[charter] could not parse model output, raw text follows: ' + res.text.slice(0, 1500));
+    // Two witnesses or it does not count: a "rule" backed by a single comment is one person's opinion on one line.
+    const sampleIds = new Set([...inputData.sample.matchAll(/\[(c\d+)\]/g)].map(m => m[1]));
+    const rules = (parsed?.rules ?? [])
+      .map(r => ({ rule: r.rule, evidence: [...new Set(r.evidence.map(e => e.replace(/[\[\]]/g, '')))].filter(e => sampleIds.has(e)) }))
+      .filter(r => r.evidence.length >= 2);
+    const dropped = (parsed?.rules.length ?? 0) - rules.length;
+    const md = [
+      '# What the ancestors kept asking for',
+      '',
+      `*Distilled by Gemma from ${inputData.n} comments spread across every year of review history; a rule only survives if at least two different comments back it (${dropped} single-witness candidates dropped).*`,
+      '',
+      ...(rules.length ? rules.map((r, i) => `${i + 1}. ${r.rule} (${r.evidence.map(e => `[${e}]`).join(' ')})`) : ['The ancestors did not repeat themselves enough in this sample for any rule to pass the two-witness test.']),
+    ].join('\n');
     return { repo: inputData.repo, markdown: md, json: JSON.stringify(rules) };
   },
 });

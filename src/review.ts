@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { z } from 'zod';
 import { parseUnifiedDiff, rankHunks, type Hunk } from './diff.js';
-import { retrieveComments, commitsForPath, charterFor, fmtEvidence, type Evidence } from './retrieve.js';
+import { retrieveComments, commitsForPath, charterFor, fmtEvidence, defaultCutoff, type Evidence } from './retrieve.js';
 import { ancestorsAgent } from './mastra.js';
 import { extractJson } from './json.js';
 import { db, migrate } from './db.js';
@@ -22,7 +22,7 @@ export interface HunkFinding {
 
 export interface ReviewResult {
   repo: string; target: string; model: string; startedAt: string; finishedAt: string;
-  hunksTotal: number; hunksReviewed: number; findings: HunkFinding[]; charter: string | null; markdown: string;
+  hunksTotal: number; hunksReviewed: number; findings: HunkFinding[]; charter: string | null; markdown: string; before: string;
 }
 
 export function diffForPr(repo: string, pr: number): string {
@@ -35,11 +35,11 @@ export function prTitle(repo: string, pr: number): string {
   } catch { return `PR #${pr}`; }
 }
 
-export async function reviewHunk(repo: string, hunk: Hunk, charter: string | null, onLog?: (s: string) => void): Promise<HunkFinding> {
+export async function reviewHunk(repo: string, hunk: Hunk, charter: string | null, onLog?: (s: string) => void, opts: { before: string; excludePr?: number } = { before: defaultCutoff() }): Promise<HunkFinding> {
   const t0 = Date.now();
   const query = `${hunk.file}\n${hunk.added.join('\n').slice(0, 1500)}\n${hunk.removed.join('\n').slice(0, 500)}`;
-  const evidence = await retrieveComments(repo, query, hunk.file);
-  const commits = await commitsForPath(repo, hunk.file, 5);
+  const evidence = await retrieveComments(repo, query, hunk.file, { before: opts.before, excludePr: opts.excludePr });
+  const commits = await commitsForPath(repo, hunk.file, 5, opts.before);
   const prompt = [
     `A new pull request touches ${hunk.file}. Here is the hunk:`,
     '```diff', hunk.text.slice(0, 3500), '```',
@@ -49,7 +49,7 @@ export async function reviewHunk(repo: string, hunk: Hunk, charter: string | nul
     `Task: Does the new code honour or violate anything the ancestors asked for in the evidence? Reply with JSON only:\n{"verdict":"note"|"ok"|"silent","note":"<2-4 sentences, specific to the hunk, citing ids like [c123]>","citations":["c123"]}\n- "note": the evidence applies and the hunk should change or be double-checked.\n- "ok": the evidence applies and the hunk already honours it (say which rule).\n- "silent": the evidence does not really cover this hunk. Then note must be exactly "the ancestors are silent on this".\nNever cite an id that is not in the evidence list.`,
   ].filter(Boolean).join('\n\n');
   onLog?.(`  · ${hunk.file} ${hunk.header.slice(0, 30)} — ${evidence.length} voices retrieved`);
-  const res = await ancestorsAgent.generate(prompt);
+  const res = await ancestorsAgent.generate(prompt, { modelSettings: { temperature: 0.2, maxOutputTokens: 700 } });
   const parsed = extractJson(res.text, verdictSchema);
   const allowed = new Map<string, Evidence>(evidence.map(e => [`c${e.id}`, e]));
   let verdict: HunkFinding['verdict'] = parsed?.verdict ?? 'silent';
@@ -59,17 +59,18 @@ export async function reviewHunk(repo: string, hunk: Hunk, charter: string | nul
   return { file: hunk.file, header: hunk.header, verdict, note, citations: cited, ms: Date.now() - t0 };
 }
 
-export async function reviewDiff(repo: string, target: string, diff: string, onLog?: (s: string) => void): Promise<ReviewResult> {
+export async function reviewDiff(repo: string, target: string, diff: string, onLog?: (s: string) => void, excludePr?: number): Promise<ReviewResult> {
   await migrate();
+  const before = defaultCutoff();
   const startedAt = new Date().toISOString();
   const all = parseUnifiedDiff(diff);
   const hunks = rankHunks(all, MAX_HUNKS);
   const charter = await charterFor(repo);
-  onLog?.(`[review] ${target}: ${all.length} hunks, reviewing the ${hunks.length} most substantive with ${CHAT_MODEL}`);
+  onLog?.(`[review] ${target}: ${all.length} hunks, reviewing the ${hunks.length} most substantive with ${CHAT_MODEL}; only voices from before ${before} may speak`);
   const findings: HunkFinding[] = [];
-  for (const h of hunks) findings.push(await reviewHunk(repo, h, charter, onLog));
+  for (const h of hunks) findings.push(await reviewHunk(repo, h, charter, onLog, { before, excludePr }));
   const finishedAt = new Date().toISOString();
-  const result: ReviewResult = { repo, target, model: CHAT_MODEL, startedAt, finishedAt, hunksTotal: all.length, hunksReviewed: hunks.length, findings, charter, markdown: '' };
+  const result: ReviewResult = { repo, target, model: CHAT_MODEL, startedAt, finishedAt, hunksTotal: all.length, hunksReviewed: hunks.length, findings, charter, markdown: '', before };
   result.markdown = renderMarkdown(result);
   await db().execute({ sql: 'INSERT INTO runs (repo, kind, target, started_at, finished_at, model, notes) VALUES (?,?,?,?,?,?,?)', args: [repo, 'review', target, startedAt, finishedAt, CHAT_MODEL, `${findings.filter(f => f.verdict === 'note').length} notes / ${findings.length} hunks`] });
   return result;
@@ -83,7 +84,7 @@ export function renderMarkdown(r: ReviewResult): string {
   const lines: string[] = [];
   lines.push(`# The ancestors visited ${r.target}`);
   lines.push('');
-  lines.push(`*${r.repo} · ${r.hunksReviewed} of ${r.hunksTotal} hunks reviewed · ${r.model} running locally · ${secs}s · ${notes.length} notes, ${oks.length} honoured, ${silent.length} silent*`);
+  lines.push(`*${r.repo} · ${r.hunksReviewed} of ${r.hunksTotal} hunks reviewed · ${r.model} running locally · ${secs}s · only review comments from before ${r.before} were allowed to speak · ${notes.length} notes, ${oks.length} honoured, ${silent.length} silent*`);
   lines.push('');
   const block = (f: HunkFinding, emoji: string) => {
     lines.push(`### ${emoji} \`${f.file}\` ${f.header.split('@@')[1]?.trim() ?? ''}`);
@@ -116,5 +117,8 @@ export function saveReport(r: ReviewResult): string {
   const base = path.join(OUT_DIR, `${slugOf(r.repo)}__${r.target.replace(/[^a-z0-9]+/gi, '-')}`);
   fs.writeFileSync(base + '.md', r.markdown);
   fs.writeFileSync(base + '.json', JSON.stringify({ ...r, markdown: undefined }, null, 2));
+  // manifest for the little static viewer in out/index.html
+  const manifest = fs.readdirSync(OUT_DIR).filter(f => f.endsWith('.md')).sort();
+  fs.writeFileSync(path.join(OUT_DIR, 'reports.json'), JSON.stringify(manifest, null, 2));
   return base + '.md';
 }
