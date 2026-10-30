@@ -6,7 +6,7 @@ Every long-lived open-source project has people who used to review every pull re
 
 Everything runs on your machine with open weights: **Gemma 3** writes the review, **EmbeddingGemma** finds the voices, **Mastra** holds the agent, memory, vector store and the charter workflow, and **Temporal** makes a multi-hour "haunting" of a repository's open PRs survive crashes and restarts.
 
-Built for the [DEV Hacktoberfest Open-Source AI Challenge: Week 4 — Ghost in the Machine](https://dev.to/challenges/hacktoberfest-week4-2026-10-26) (Día de los Muertos: the dead are allowed to visit, and they only speak about what they actually saw).
+Built for the [DEV Hacktoberfest Open-Source AI Challenge: Week 4 — Ghost in the Machine](https://dev.to/challenges/hacktoberfest-week4-2026-10-26); the write-up with real runs is [on DEV](https://dev.to/han_vigo_7aecf96f08a23b63/i-let-httpxs-departed-reviewers-come-back-for-a-day-they-had-notes-1a22) (Día de los Muertos: the dead are allowed to visit, and they only speak about what they actually saw).
 
 ## What it does
 
